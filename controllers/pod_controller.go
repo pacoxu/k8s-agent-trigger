@@ -2,15 +2,18 @@ package controllers
 
 import (
 	"context"
-	"fmt"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/pacoxu/k8s-agent-trigger/pkg/dispatcher"
 	"github.com/pacoxu/k8s-agent-trigger/pkg/recorder"
@@ -25,8 +28,8 @@ const (
 type PodReconciler struct {
 	client.Client
 	Scheme     *runtime.Scheme
-	Dispatcher *dispatcher.HTTPDispatcher
-	Recorder   *recorder.ConfigMapRecorder
+	Dispatcher EventDispatcher
+	Recorder   RunRecorder
 }
 
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
@@ -45,9 +48,30 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		return ctrl.Result{}, nil
 	}
 
+	eventID := buildEventID(
+		"PodCrashLoop",
+		pod.Namespace,
+		pod.Name,
+		string(pod.UID),
+		"reason=CrashLoopBackOff",
+	)
+	recordKey := recordKeyForEvent(eventID)
+	exists, err := r.Recorder.HasRecord(ctx, recordKey)
+	if err != nil {
+		logger.Error(err, "failed to query run history for duplicate suppression", "key", recordKey)
+		return ctrl.Result{}, err
+	}
+	if exists {
+		logger.Info("Duplicate pod crashloop trigger suppressed", "eventID", eventID, "key", recordKey)
+		return ctrl.Result{}, nil
+	}
+
+	observedAt := time.Now().UTC().Format(time.RFC3339)
+
 	logger.Info("Pod CrashLoopBackOff detected, dispatching trigger",
 		"namespace", pod.Namespace,
 		"name", pod.Name,
+		"eventID", eventID,
 	)
 
 	triggerEvent := dispatcher.TriggerEvent{
@@ -55,27 +79,43 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		Namespace:   pod.Namespace,
 		Name:        pod.Name,
 		Reason:      "CrashLoopBackOff",
+		EventID:     eventID,
+		ResourceUID: string(pod.UID),
+		ObservedAt:  observedAt,
 	}
 
 	agentResp, err := r.Dispatcher.Dispatch(ctx, triggerEvent)
 	if err != nil {
-		logger.Error(err, "failed to dispatch trigger event")
-		return ctrl.Result{}, err
+		logger.Error(err, "failed to dispatch trigger event", "eventID", eventID)
+		if dispatcher.IsTransient(err) {
+			return ctrl.Result{}, err
+		}
+
+		recordErr := r.Recorder.Record(ctx, recordKey, recorder.RunRecord{
+			Status:    "failed",
+			Summary:   err.Error(),
+			Timestamp: observedAt,
+		})
+		if recordErr != nil {
+			logger.Error(recordErr, "failed to record permanent dispatch failure", "key", recordKey)
+			return ctrl.Result{}, recordErr
+		}
+		return ctrl.Result{}, nil
 	}
 
-	key := fmt.Sprintf("%s/%s_crashloop", pod.Namespace, pod.Name)
 	runRecord := recorder.RunRecord{
-		Status:  agentResp.Status,
-		Summary: agentResp.Summary,
-		Actions: agentResp.Actions,
+		Status:    agentResp.Status,
+		Summary:   agentResp.Summary,
+		Actions:   agentResp.Actions,
+		Timestamp: observedAt,
 	}
 
-	if err := r.Recorder.Record(ctx, key, runRecord); err != nil {
-		logger.Error(err, "failed to record agent run result", "key", key)
+	if err := r.Recorder.Record(ctx, recordKey, runRecord); err != nil {
+		logger.Error(err, "failed to record agent run result", "key", recordKey)
 		return ctrl.Result{}, err
 	}
 
-	logger.Info("Agent run recorded", "key", key, "status", agentResp.Status)
+	logger.Info("Agent run recorded", "key", recordKey, "status", agentResp.Status)
 	return ctrl.Result{}, nil
 }
 
@@ -115,8 +155,17 @@ func (podCrashLoopPredicate) Create(e event.CreateEvent) bool {
 
 // SetupWithManager registers the PodReconciler with the controller manager.
 func (r *PodReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	rateLimiter := workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](
+		500*time.Millisecond,
+		10*time.Second,
+	)
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.Pod{}).
 		WithEventFilter(podCrashLoopPredicate{}).
+		WithOptions(controller.Options{
+			MaxConcurrentReconciles: 2,
+			RateLimiter:             rateLimiter,
+		}).
 		Complete(r)
 }

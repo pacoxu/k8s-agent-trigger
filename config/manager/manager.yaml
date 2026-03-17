@@ -2,12 +2,12 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: k8s-agent-trigger
-  namespace: system
+  namespace: k8s-agent-trigger-system
   labels:
     app.kubernetes.io/name: k8s-agent-trigger
     app.kubernetes.io/component: controller-manager
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app.kubernetes.io/name: k8s-agent-trigger
@@ -23,13 +23,17 @@ spec:
           type: RuntimeDefault
       containers:
         - name: manager
-          image: ghcr.io/pacoxu/k8s-agent-trigger:latest
+          image: ghcr.io/pacoxu/k8s-agent-trigger:v0.1.0
           args:
             - "--agent-endpoint=$(AGENT_ENDPOINT)"
             - "--recorder-namespace=$(POD_NAMESPACE)"
             - "--leader-elect=true"
             - "--metrics-bind-address=:8080"
             - "--health-probe-bind-address=:8081"
+            - "--dispatch-max-retries=3"
+            - "--dispatch-retry-base=500ms"
+            - "--dispatch-enabled=true"
+            - "--history-max-entries=500"
           env:
             - name: AGENT_ENDPOINT
               valueFrom:

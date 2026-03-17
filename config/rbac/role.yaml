@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: k8s-agent-trigger
-  namespace: system
+  namespace: k8s-agent-trigger-system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -29,6 +29,10 @@ rules:
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["create", "patch"]
+  # Leader election lease operations
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -41,4 +45,4 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: k8s-agent-trigger
-    namespace: system
+    namespace: k8s-agent-trigger-system

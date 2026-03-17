@@ -12,3 +12,10 @@ func updateEvent(obj client.Object) event.UpdateEvent {
 		ObjectNew: obj,
 	}
 }
+
+// createEvent creates a minimal CreateEvent for use in predicate tests.
+func createEvent(obj client.Object) event.CreateEvent {
+	return event.CreateEvent{
+		Object: obj,
+	}
+}

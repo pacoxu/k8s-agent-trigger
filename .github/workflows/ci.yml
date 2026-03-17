@@ -30,6 +30,11 @@ jobs:
       - name: Run go vet
         run: go vet ./...
 
+      - name: Run govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+          "$(go env GOPATH)/bin/govulncheck" ./...
+
       - name: Run go fmt check
         run: |
           gofmt_out=$(gofmt -l .)
@@ -41,6 +46,36 @@ jobs:
 
       - name: Run tests
         run: go test ./... -v -race -count=1
+
+      - name: Enforce package coverage thresholds
+        run: ./hack/check-coverage.sh
+
+  envtest-integration:
+    name: Envtest Integration
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install setup-envtest
+        run: go install sigs.k8s.io/controller-runtime/tools/setup-envtest@v0.0.0-20260317052337-b8d2b5b862fa
+
+      - name: Provision envtest binaries
+        run: |
+          mkdir -p /tmp/kubebuilder
+          KUBEBUILDER_ASSETS="$($(go env GOPATH)/bin/setup-envtest use 1.31.x --bin-dir /tmp/kubebuilder -p path)"
+          echo "KUBEBUILDER_ASSETS=$KUBEBUILDER_ASSETS" >> "$GITHUB_ENV"
+
+      - name: Run envtest integration suites
+        run: RUN_ENVTEST=1 go test ./controllers ./pkg/recorder -run EnvTest -count=1 -v
 
   build:
     name: Build
@@ -66,7 +101,7 @@ jobs:
     permissions:
       contents: read
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [lint-and-test, build]
+    needs: [lint-and-test, envtest-integration, build]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
