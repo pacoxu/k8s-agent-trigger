@@ -78,12 +78,23 @@ type HTTPDispatcher struct {
 
 // NewHTTPDispatcher creates a new HTTPDispatcher with default retry options.
 func NewHTTPDispatcher(endpoint string, timeout time.Duration) *HTTPDispatcher {
-	return NewHTTPDispatcherWithOptions(endpoint, timeout, DispatchOptions{})
+	return NewHTTPDispatcherWithOptions(endpoint, timeout, DispatchOptions{
+		MaxRetries:      defaultMaxRetries,
+		RetryBase:       defaultRetryBase,
+		Enabled:         true,
+		MaxPayloadBytes: defaultMaxPayloadBytes,
+		MaxResponseSize: defaultMaxResponseSize,
+	})
 }
 
 // NewHTTPDispatcherWithOptions creates a new HTTPDispatcher with explicit options.
 func NewHTTPDispatcherWithOptions(endpoint string, timeout time.Duration, opts DispatchOptions) *HTTPDispatcher {
+	zeroOpts := DispatchOptions{}
+
 	maxRetries := opts.MaxRetries
+	if opts == zeroOpts {
+		maxRetries = defaultMaxRetries
+	}
 	if maxRetries < 0 {
 		maxRetries = defaultMaxRetries
 	}
@@ -127,7 +138,7 @@ func NewHTTPDispatcherWithOptions(endpoint string, timeout time.Duration, opts D
 // Dispatch sends a TriggerEvent to the configured Agent endpoint and returns the AgentResponse.
 func (d *HTTPDispatcher) Dispatch(ctx context.Context, event TriggerEvent) (*AgentResponse, error) {
 	if !d.enabled {
-		observeDispatchMetrics(event.TriggerType, "success", "none", 0)
+		observeDispatchMetrics(event.TriggerType, "disabled", "none", 0)
 		return &AgentResponse{
 			Status:  "warning",
 			Summary: "dispatch disabled by configuration",

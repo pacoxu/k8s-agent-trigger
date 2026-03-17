@@ -25,10 +25,15 @@ type conflictOnceClient struct {
 }
 
 func (c *conflictOnceClient) Update(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
+	shouldConflict := false
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if !c.conflictFired && obj.GetName() == RunHistoryConfigMap {
 		c.conflictFired = true
+		shouldConflict = true
+	}
+	c.mu.Unlock()
+
+	if shouldConflict {
 		return apierrors.NewConflict(
 			schema.GroupResource{Group: "", Resource: "configmaps"},
 			obj.GetName(),

@@ -14,7 +14,7 @@ var (
 	dispatchAttemptsTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "k8s_agent_trigger_dispatch_attempts_total",
-			Help: "Total number of dispatch attempts partitioned by result and error type.",
+			Help: "Total number of dispatch outcomes partitioned by result and error type.",
 		},
 		[]string{"trigger_type", "result", "error_type"},
 	)

@@ -126,7 +126,7 @@ func (r *ConfigMapRecorder) Record(ctx context.Context, key string, record RunRe
 		return r.client.Update(ctx, cm)
 	})
 	if err != nil {
-		return fmt.Errorf("failed to update run history ConfigMap: %w", err)
+		return fmt.Errorf("failed to persist run history ConfigMap: %w", err)
 	}
 	return nil
 }

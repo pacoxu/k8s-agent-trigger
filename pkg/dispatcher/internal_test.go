@@ -122,6 +122,20 @@ func TestNewHTTPDispatcherDefaultConstructor(t *testing.T) {
 	if !d.enabled {
 		t.Fatal("default dispatcher should be enabled")
 	}
+	if d.maxRetries != defaultMaxRetries {
+		t.Fatalf("default max retries = %d, want %d", d.maxRetries, defaultMaxRetries)
+	}
+}
+
+func TestNewHTTPDispatcherWithZeroOptionsUsesDefaults(t *testing.T) {
+	t.Parallel()
+	d := NewHTTPDispatcherWithOptions("http://example.com", time.Second, DispatchOptions{})
+	if d.maxRetries != defaultMaxRetries {
+		t.Fatalf("max retries = %d, want default %d", d.maxRetries, defaultMaxRetries)
+	}
+	if !d.enabled {
+		t.Fatal("zero options should enable dispatch by default")
+	}
 }
 
 func TestDispatchPayloadTooLarge(t *testing.T) {

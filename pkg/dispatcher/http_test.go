@@ -78,7 +78,7 @@ func TestHTTPDispatcher_Dispatch(t *testing.T) {
 	}
 }
 
-func TestHTTPDispatcher_RetrysTransientFailure(t *testing.T) {
+func TestHTTPDispatcher_RetriesTransientFailure(t *testing.T) {
 	var callCount int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		call := atomic.AddInt32(&callCount, 1)

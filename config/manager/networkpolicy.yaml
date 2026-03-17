@@ -44,12 +44,14 @@ spec:
         - protocol: TCP
           port: 53
     - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8080
+    # Allow HTTPS egress for managed Kubernetes API endpoints and external Agent endpoints.
+    - to:
         - ipBlock:
             cidr: 0.0.0.0/0
       ports:
         - protocol: TCP
-          port: 80
-        - protocol: TCP
           port: 443
-        - protocol: TCP
-          port: 8080
