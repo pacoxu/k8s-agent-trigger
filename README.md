@@ -173,6 +173,19 @@ k8s-agent-trigger/
 - Runbook: [`docs/operations-runbook.md`](docs/operations-runbook.md)
 - Emergency stop for outbound Agent calls: set `--dispatch-enabled=false`
 
+## Testing
+
+```bash
+# Unit + race
+go test ./... -race -count=1
+
+# Coverage gates used by CI
+./hack/check-coverage.sh
+
+# Envtest integration suites (requires KUBEBUILDER_ASSETS)
+RUN_ENVTEST=1 go test ./controllers ./pkg/recorder -run EnvTest -count=1 -v
+```
+
 ## Development Roadmap
 
 | Phase | Goals | Timeline |
