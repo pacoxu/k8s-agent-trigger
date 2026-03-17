@@ -1,6 +1,6 @@
 module github.com/pacoxu/k8s-agent-trigger
 
-go 1.24.13
+go 1.25.8
 
 require (
 	github.com/prometheus/client_golang v1.19.1
