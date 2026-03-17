@@ -18,6 +18,7 @@ package main
 import (
 	"flag"
 	"os"
+	"strings"
 	"time"
 
 	// Import all Kubernetes client auth plugins to ensure cloud providers work.
@@ -52,6 +53,11 @@ func main() {
 	var agentEndpoint string
 	var recorderNamespace string
 	var agentTimeout time.Duration
+	var dispatchMaxRetries int
+	var dispatchRetryBase time.Duration
+	var dispatchEnabled bool
+	var agentAuthTokenFile string
+	var historyMaxEntries int
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080",
 		"The address the metrics endpoint binds to. Use :0 to disable.")
@@ -65,6 +71,16 @@ func main() {
 		"Namespace where the agent-run-history ConfigMap will be created/updated.")
 	flag.DurationVar(&agentTimeout, "agent-timeout", 30*time.Second,
 		"Timeout for Agent HTTP requests.")
+	flag.IntVar(&dispatchMaxRetries, "dispatch-max-retries", 3,
+		"Maximum number of retries for transient Agent dispatch failures.")
+	flag.DurationVar(&dispatchRetryBase, "dispatch-retry-base", 500*time.Millisecond,
+		"Base delay for exponential backoff when retrying transient dispatch failures.")
+	flag.BoolVar(&dispatchEnabled, "dispatch-enabled", true,
+		"Whether outbound dispatch to the Agent endpoint is enabled.")
+	flag.StringVar(&agentAuthTokenFile, "agent-auth-token-file", "",
+		"Optional path to a file containing the bearer token for Agent HTTP requests.")
+	flag.IntVar(&historyMaxEntries, "history-max-entries", 500,
+		"Maximum number of entries retained in the agent-run-history ConfigMap.")
 
 	opts := zap.Options{Development: true}
 	opts.BindFlags(flag.CommandLine)
@@ -75,6 +91,24 @@ func main() {
 	if agentEndpoint == "" {
 		setupLog.Error(nil, "agent-endpoint flag is required")
 		os.Exit(1)
+	}
+	if historyMaxEntries <= 0 {
+		setupLog.Error(nil, "history-max-entries must be > 0")
+		os.Exit(1)
+	}
+
+	agentAuthToken := ""
+	if agentAuthTokenFile != "" {
+		rawToken, err := os.ReadFile(agentAuthTokenFile)
+		if err != nil {
+			setupLog.Error(err, "failed to read agent auth token file", "path", agentAuthTokenFile)
+			os.Exit(1)
+		}
+		agentAuthToken = strings.TrimSpace(string(rawToken))
+		if agentAuthToken == "" {
+			setupLog.Error(nil, "agent auth token file is empty", "path", agentAuthTokenFile)
+			os.Exit(1)
+		}
 	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
@@ -91,8 +125,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	disp := dispatcher.NewHTTPDispatcher(agentEndpoint, agentTimeout)
-	rec := recorder.NewConfigMapRecorder(mgr.GetClient(), recorderNamespace)
+	disp := dispatcher.NewHTTPDispatcherWithOptions(agentEndpoint, agentTimeout, dispatcher.DispatchOptions{
+		MaxRetries: dispatchMaxRetries,
+		RetryBase:  dispatchRetryBase,
+		Enabled:    dispatchEnabled,
+		AuthToken:  agentAuthToken,
+	})
+	rec := recorder.NewConfigMapRecorder(mgr.GetClient(), recorderNamespace, historyMaxEntries)
 
 	if err = (&controllers.DeploymentReconciler{
 		Client:     mgr.GetClient(),

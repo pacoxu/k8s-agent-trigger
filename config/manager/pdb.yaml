@@ -1,0 +1,14 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: k8s-agent-trigger
+  namespace: k8s-agent-trigger-system
+  labels:
+    app.kubernetes.io/name: k8s-agent-trigger
+    app.kubernetes.io/component: controller-manager
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: k8s-agent-trigger
+

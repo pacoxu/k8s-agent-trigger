@@ -50,6 +50,8 @@ kubectl create secret generic k8s-agent-trigger-config \
 
 # 4. Deploy the controller
 kubectl apply -f config/manager/manager.yaml
+kubectl apply -f config/manager/pdb.yaml
+kubectl apply -f config/manager/networkpolicy.yaml
 ```
 
 ### Running Locally
@@ -57,7 +59,10 @@ kubectl apply -f config/manager/manager.yaml
 ```bash
 go run ./cmd/ \
   --agent-endpoint=http://localhost:9090/api/v1/agent/run \
-  --recorder-namespace=default \
+  --recorder-namespace=k8s-agent-trigger-system \
+  --dispatch-max-retries=3 \
+  --dispatch-retry-base=500ms \
+  --history-max-entries=500 \
   --leader-elect=false
 ```
 
@@ -71,6 +76,9 @@ go run ./cmd/ \
   "namespace": "prod",
   "name": "web-app",
   "generation": 3,
+  "eventID": "deploymentupdate:prod:web-app:44f7...:generation=3",
+  "resourceUID": "44f7f2fc-8ce8-4d43-b5af-3f467f3037ec",
+  "observedAt": "2026-03-02T11:34:59Z",
   "timestamp": "2026-03-02T11:35:00Z"
 }
 ```
@@ -92,9 +100,9 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: agent-run-history
-  namespace: default
+  namespace: k8s-agent-trigger-system
 data:
-  "prod/web-app_v3": |
+  "run.2b2f5e62d293ec507a0ea45f9ee88187": |
     {"status":"passed","summary":"Deployment web-app v3 rolled out successfully.","timestamp":"2026-03-02T11:40:00Z"}
 ```
 
@@ -133,8 +141,12 @@ k8s-agent-trigger/
 │       └── configmap.go
 ├── config/
 │   ├── rbac/               # RBAC manifests
-│   ├── manager/            # Controller deployment manifest
+│   ├── manager/            # Deployment + PDB + NetworkPolicy
 │   └── samples/            # Example trigger resources
+├── docs/
+│   └── operations-runbook.md
+├── hack/
+│   └── check-coverage.sh
 ├── .github/workflows/      # GitHub Actions CI
 ├── Dockerfile
 └── README.md
@@ -147,9 +159,19 @@ k8s-agent-trigger/
 | `--agent-endpoint` | _(required)_ | HTTP endpoint of the Agent service |
 | `--recorder-namespace` | `default` | Namespace for the `agent-run-history` ConfigMap |
 | `--agent-timeout` | `30s` | HTTP request timeout for Agent calls |
+| `--dispatch-max-retries` | `3` | Maximum retries for transient dispatch failures |
+| `--dispatch-retry-base` | `500ms` | Base delay for exponential retry backoff |
+| `--dispatch-enabled` | `true` | Enable/disable outbound dispatch calls |
+| `--agent-auth-token-file` | _(empty)_ | Optional file containing bearer token for Agent HTTP requests |
+| `--history-max-entries` | `500` | Maximum number of records retained in ConfigMap history |
 | `--leader-elect` | `false` | Enable leader election for HA deployments |
 | `--metrics-bind-address` | `:8080` | Address for Prometheus metrics endpoint |
 | `--health-probe-bind-address` | `:8081` | Address for health/readiness probes |
+
+## Operations
+
+- Runbook: [`docs/operations-runbook.md`](docs/operations-runbook.md)
+- Emergency stop for outbound Agent calls: set `--dispatch-enabled=false`
 
 ## Development Roadmap
 

@@ -194,3 +194,59 @@ func TestPodCrashLoopPredicate_Update(t *testing.T) {
 		t.Error("expected update predicate to fail for healthy pod")
 	}
 }
+
+func TestJobFailedPredicate_Create(t *testing.T) {
+	p := jobFailedPredicate{}
+
+	failedJob := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{Name: "test"},
+		Status: batchv1.JobStatus{
+			Conditions: []batchv1.JobCondition{
+				{Type: batchv1.JobFailed, Status: "True"},
+			},
+		},
+	}
+	if !p.Create(createEvent(failedJob)) {
+		t.Error("expected create predicate to pass for failed job")
+	}
+
+	completeJob := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{Name: "test"},
+		Status: batchv1.JobStatus{
+			Conditions: []batchv1.JobCondition{
+				{Type: batchv1.JobComplete, Status: "True"},
+			},
+		},
+	}
+	if p.Create(createEvent(completeJob)) {
+		t.Error("expected create predicate to fail for complete job")
+	}
+}
+
+func TestPodCrashLoopPredicate_Create(t *testing.T) {
+	p := podCrashLoopPredicate{}
+
+	crashPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "test"},
+		Status: corev1.PodStatus{
+			ContainerStatuses: []corev1.ContainerStatus{
+				{RestartCount: 5, Ready: false},
+			},
+		},
+	}
+	if !p.Create(createEvent(crashPod)) {
+		t.Error("expected create predicate to pass for crash-looping pod")
+	}
+
+	healthyPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "test"},
+		Status: corev1.PodStatus{
+			ContainerStatuses: []corev1.ContainerStatus{
+				{RestartCount: 0, Ready: true},
+			},
+		},
+	}
+	if p.Create(createEvent(healthyPod)) {
+		t.Error("expected create predicate to fail for healthy pod")
+	}
+}
